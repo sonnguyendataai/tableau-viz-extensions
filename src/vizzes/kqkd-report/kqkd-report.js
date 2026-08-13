@@ -39,7 +39,7 @@ let uiReportYear = null;
 
 /** DEBUG: đếm số lần render + bật/tắt dòng debug ở đáy. Đặt true khi cần dò lỗi. */
 let renderTick = 0;
-const DEBUG = false;
+const DEBUG = true;
 
 const rowHdrWidth = (level) => (level === 0 ? 260 : 150);
 const CELL_MIN_W = 76;
@@ -250,20 +250,26 @@ function render(info) {
   scroll.appendChild(table);
   container.appendChild(scroll);
 
-  // ---- DEBUG: dòng đáy cho biết extension THỰC SỰ nhận gì (stale vs mapping) ----
+  // ---- DEBUG: dòng đáy cho biết extension THỰC SỰ nhận gì (field name + giá trị thô) ----
   if (DEBUG) {
     renderTick++;
+    const distinct = [];
+    const seen = new Set();
+    for (const r of encodedData) {
+      const dv = r.month?.[0];
+      const k = JSON.stringify([dv?.value, dv?.formattedValue]);
+      if (!seen.has(k)) { seen.add(k); distinct.push(`${JSON.stringify(dv?.value)}→"${dv?.formattedValue}"`); }
+      if (distinct.length >= 10) break;
+    }
+    const yr = encodedData.find((r) => r.year?.[0])?.year?.[0];
     const dbg = document.createElement('div');
     dbg.style.cssText =
       'position:fixed;bottom:0;left:0;right:0;font:11px/1.4 monospace;background:#111;' +
-      'color:#0f0;padding:3px 8px;z-index:99999;white-space:nowrap;overflow:auto';
-    const sample = encodedData.find((r) => r.month?.[0]);
+      'color:#0f0;padding:4px 8px;z-index:99999;white-space:pre-wrap;max-height:96px;overflow:auto';
     dbg.textContent =
-      `[dbg#${renderTick}] kỳ-field="${monthFields[0]?.name ?? '—'}"` +
-      ` · subs(${subs.length})=[${subs.map((s) => subLabels.get(s)).join(' | ')}]` +
-      ` · sample(value=${JSON.stringify(sample?.month?.[0]?.value)},fmt=${JSON.stringify(sample?.month?.[0]?.formattedValue)})` +
-      ` · năm=${years.join('/')} Y=${Y}` +
-      ` · dataRows=${encodedData.length} itemRows=${itemOrder.length}`;
+      `[dbg#${renderTick}] year-field="${yearFields[0]?.name}" (vd ${JSON.stringify(yr?.value)}→"${yr?.formattedValue}")  |  kỳ-field="${monthFields[0]?.name}"\n` +
+      `kỳ distinct(${distinct.length}): ${distinct.join('   ')}\n` +
+      `subs(${subs.length})=[${subs.map((s) => subLabels.get(s)).join(' | ')}]  ·  năm=${years.join('/')} Y=${Y}  ·  dataRows=${encodedData.length}`;
     container.appendChild(dbg);
   }
 
