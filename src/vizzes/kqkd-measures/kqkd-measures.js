@@ -37,6 +37,10 @@ let paramName = null;
 /** Đã gắn listener parameter chưa (chỉ làm 1 lần). */
 let paramWired = false;
 
+/** DEBUG tạm: dòng đáy cho biết period nhận được gì (để soi "lỗi cột"). */
+let renderTick = 0;
+const DEBUG = true;
+
 const rowHdrWidth = 300;
 const CELL_MIN_W = 76;
 
@@ -100,20 +104,23 @@ function render(info) {
   }
 
   // ---- Parse: mỗi measure → 1 "hàng" với byYM(year-sub → {v,f,src}) ----
+  // period = 1..N date-part (ngoài→trong). Cấp TRONG CÙNG (lastIdx) = mức so sánh (ordinal).
   const measureNames = measureFields.map((f, i) => f?.name ?? `Measure ${i + 1}`);
   const perMeasure = measureNames.map((n) => ({ name: n, byYM: new Map() }));
+  const lastIdx = periodFields.length - 1;
   const yearsSet = new Set();
   const subSet = new Set();
-  const subLabels = new Map();
+  const subMeta = new Map(); // ordinal(cấp trong cùng) → path nhãn [ngoài..trong]
   let bad = 0;
 
   for (const r of encodedData) {
     const y = yearNum(r.year?.[0]);
-    const s = periodNum(r.period?.[0]);
+    const pv = r.period ?? [];
+    const s = periodNum(pv[lastIdx]); // cấp trong cùng
     if (y == null || s == null) { bad++; continue; }
     yearsSet.add(y);
     subSet.add(s);
-    if (!subLabels.has(s)) subLabels.set(s, r.period?.[0]?.formattedValue ?? String(s));
+    if (!subMeta.has(s)) subMeta.set(s, pv.map((dv) => dv?.formattedValue ?? '∅'));
     const vals = r.measures ?? [];
     for (let m = 0; m < perMeasure.length; m++) {
       const dv = vals[m];
@@ -133,7 +140,7 @@ function render(info) {
 
   const years = [...yearsSet].sort((a, b) => a - b);
   const subs = [...subSet].sort((a, b) => a - b);
-  const periodName = (periodFields[0]?.name || '').toLowerCase();
+  const periodName = (periodFields[lastIdx]?.name || '').toLowerCase(); // cấp trong cùng quyết định maxSub
   const maxSub = /quarter|quý|quy/.test(periodName) ? 4 : /month|tháng|thang/.test(periodName) ? 12 : Math.max(...subs);
 
   // Năm báo cáo: parameter (nếu có) > dropdown > năm mới nhất.
@@ -148,8 +155,9 @@ function render(info) {
     { key: 'G3', kind: 'pct', label: 'Tăng trưởng so với kỳ trước (kỳ liền kề)' },
     { key: 'G4', kind: 'pct', label: 'Tăng trưởng so với cùng kỳ năm trước' },
   ];
+  // Cột lá (group-major): mỗi (group × sub cấp-trong-cùng) = 1 cột.
   const leaves = [];
-  groups.forEach((group) => subs.forEach((sub) => leaves.push({ group, sub })));
+  groups.forEach((group, gi) => subs.forEach((sub) => leaves.push({ gi, group, sub })));
 
   // ---- Cấu hình + theme ----
   const cornerLabel = readSetting(SETTINGS.cornerLabel, DEFAULTS.cornerLabel);
@@ -169,44 +177,53 @@ function render(info) {
   table.style.setProperty('--kq-hdr-bg2', shade(headerBg, 0.2));
   table.style.setProperty('--kq-hdr-text', headerText);
 
-  // ===== THEAD =====
+  // ===== THEAD ===== (1 hàng Nhóm + N hàng cấp kỳ: Nhóm → Quý → Tháng…)
+  const numColLevels = 1 + periodFields.length;
   const thead = table.createTHead();
-  const tr0 = thead.insertRow();
-  const corner = document.createElement('th');
-  corner.className = 'kq-corner';
-  corner.rowSpan = 2;
-  corner.style.left = '0px';
-  const unit = document.createElement('span');
-  unit.className = 'kq-unit';
-  unit.textContent = cornerLabel;
-  corner.appendChild(unit);
-  if (paramBound) {
-    // Năm điều khiển bằng parameter → hiện chú thích thay vì dropdown.
-    const note = document.createElement('span');
-    note.className = 'kq-paramnote';
-    note.textContent = `Năm báo cáo: ${Y}  (theo parameter «${paramName}»)`;
-    corner.appendChild(note);
-  } else {
-    corner.appendChild(buildYearSelect(years, Y));
-  }
-  tr0.appendChild(corner);
-
-  groups.forEach((group) => {
-    const th = document.createElement('th');
-    th.className = 'kq-colhdr kq-collvl-0';
-    th.colSpan = subs.length;
-    th.textContent = group.label;
-    th.title = group.label;
-    tr0.appendChild(th);
-  });
-  const tr1 = thead.insertRow();
-  for (const leaf of leaves) {
-    const th = document.createElement('th');
-    th.className = 'kq-colhdr';
-    const label = subLabels.get(leaf.sub) ?? String(leaf.sub);
-    th.textContent = label;
-    th.title = label;
-    tr1.appendChild(th);
+  for (let L = 0; L < numColLevels; L++) {
+    const tr = thead.insertRow();
+    if (L === 0) {
+      const corner = document.createElement('th');
+      corner.className = 'kq-corner';
+      corner.rowSpan = numColLevels;
+      corner.style.left = '0px';
+      const unit = document.createElement('span');
+      unit.className = 'kq-unit';
+      unit.textContent = cornerLabel;
+      corner.appendChild(unit);
+      if (paramBound) {
+        const note = document.createElement('span');
+        note.className = 'kq-paramnote';
+        note.textContent = `Năm báo cáo: ${Y}  (theo parameter «${paramName}»)`;
+        corner.appendChild(note);
+      } else {
+        corner.appendChild(buildYearSelect(years, Y));
+      }
+      tr.appendChild(corner);
+      // Hàng Nhóm: mỗi nhóm span toàn bộ cột kỳ.
+      groups.forEach((group) => {
+        const th = document.createElement('th');
+        th.className = 'kq-colhdr kq-collvl-0';
+        th.colSpan = subs.length;
+        th.textContent = group.label;
+        th.title = group.label;
+        tr.appendChild(th);
+      });
+    } else {
+      // Cấp kỳ pl: gộp các leaf liền nhau cùng (nhóm, tiền tố path tới pl).
+      const pl = L - 1;
+      const rr = runs(leaves, (leaf) => leaf.gi + '\x01' + (subMeta.get(leaf.sub) || []).slice(0, pl + 1).join('\x00'));
+      for (const run of rr) {
+        const th = document.createElement('th');
+        th.className = 'kq-colhdr';
+        const path = subMeta.get(run.item.sub) || [];
+        const lbl = path[pl] ?? String(run.item.sub);
+        th.colSpan = run.span;
+        th.textContent = lbl;
+        th.title = lbl;
+        tr.appendChild(th);
+      }
+    }
   }
 
   // ===== TBODY: mỗi measure = 1 dòng =====
@@ -252,6 +269,34 @@ function render(info) {
     for (const c of tr.cells) c.style.top = top + 'px';
     top += h;
   }
+
+  // ---- DEBUG tạm: period fields + số cột kỳ ----
+  if (DEBUG) {
+    renderTick++;
+    const dbg = document.createElement('div');
+    dbg.style.cssText =
+      'position:fixed;bottom:0;left:0;right:0;font:11px/1.4 monospace;background:#111;color:#0f0;' +
+      'padding:4px 8px;z-index:99999;white-space:pre-wrap;max-height:96px;overflow:auto';
+    dbg.textContent =
+      `[dbg#${renderTick}] period-fields=[${periodFields.map((f) => '"' + f?.name + '"').join(', ')}] (cấp trong cùng="${periodFields[lastIdx]?.name}")\n` +
+      `subs(${subs.length}, ordinal cấp trong): [${subs.join(', ')}]  ·  maxSub=${maxSub}  ·  cột kỳ=${subs.length} → tổng cột = 4×${subs.length}=${4 * subs.length}\n` +
+      `sample path: ${JSON.stringify(subMeta.get(subs[0]))}  ·  năm=${years.join('/')} Y=${Y}${paramBound ? ' (parameter «' + paramName + '»)' : ' (dropdown)'}  ·  measures=${measureNames.length}`;
+    container.appendChild(dbg);
+  }
+}
+
+/**
+ * Gộp phần tử LIỀN NHAU cùng key → [{key, span, item}]. Dùng cho colspan header kỳ lồng cấp.
+ */
+function runs(items, keyFn) {
+  const out = [];
+  for (let i = 0; i < items.length; i++) {
+    const k = keyFn(items[i], i);
+    const last = out[out.length - 1];
+    if (last && last.key === k) last.span++;
+    else out.push({ key: k, span: 1, item: items[i] });
+  }
+  return out;
 }
 
 /* =====================================================================

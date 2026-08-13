@@ -34,11 +34,11 @@
     </encoding>
 
     <encoding id="period">
-      <display-name>Tháng/Quý (MONTH hoặc QUARTER)</display-name>
+      <display-name>Kỳ: Quý / Tháng (thả nhiều để lồng cấp, ngoài→trong)</display-name>
       <role-spec>
         <role-type>discrete-dimension</role-type>
       </role-spec>
-      <fields max-count="1"/>
+      <fields max-count="3"/>
       <encoding-icon token="color"/>
     </encoding>
   </worksheet-extension>

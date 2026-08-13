@@ -35,13 +35,14 @@
       <encoding-icon token="letter-x"/>
     </encoding>
 
-    <!-- Period: MONTH hoặc QUARTER(date) rời rạc — kỳ con (12 tháng / 4 quý). -->
+    <!-- Period: 1..3 date-part rời rạc, THỨ TỰ NGOÀI→TRONG (vd Quý rồi Tháng) → cột lồng
+         nhiều cấp: Nhóm → Quý → Tháng. Cấp TRONG CÙNG là mức so sánh (Tháng → MoM theo tháng). -->
     <encoding id="period">
-      <display-name>Tháng/Quý (MONTH hoặc QUARTER)</display-name>
+      <display-name>Kỳ: Quý / Tháng (thả nhiều để lồng cấp, ngoài→trong)</display-name>
       <role-spec>
         <role-type>discrete-dimension</role-type>
       </role-spec>
-      <fields max-count="1"/>
+      <fields max-count="3"/>
       <encoding-icon token="color"/>
     </encoding>
   </worksheet-extension>
