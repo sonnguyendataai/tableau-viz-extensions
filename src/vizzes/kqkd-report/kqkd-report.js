@@ -39,7 +39,7 @@ let uiReportYear = null;
 
 /** DEBUG: đếm số lần render + bật/tắt dòng debug ở đáy. Đặt true khi cần dò lỗi. */
 let renderTick = 0;
-const DEBUG = true;
+const DEBUG = false;
 
 const rowHdrWidth = (level) => (level === 0 ? 260 : 150);
 const CELL_MIN_W = 76;
