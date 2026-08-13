@@ -10,7 +10,7 @@
     <author name="son.nguyen" email="son.nguyen@corp.local" organization="Tableau Viz Platform" website="https://viz.corp.local"/>
     <min-api-version>1.11</min-api-version>
     <source-location>
-      <url>https://YOUR-USER.github.io/YOUR-REPO/src/vizzes/pivot-table/pivot-table.html</url>
+      <url>https://sonnguyendataai.github.io/tableau-viz-extensions/src/vizzes/pivot-table/pivot-table.html</url>
     </source-location>
     <icon/>
 
