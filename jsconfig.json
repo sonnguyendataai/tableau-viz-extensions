@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "types": ["@tableau/extensions-api-types"]
+  },
+  "include": ["src/**/*.js"],
+  "exclude": ["node_modules", "lib"]
+}

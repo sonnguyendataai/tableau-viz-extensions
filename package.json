@@ -1,0 +1,22 @@
+{
+  "name": "tableau-viz-extension-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nền tảng build custom Tableau viz extensions theo yêu cầu (plain JS + D3, mô hình BUILD ZONE).",
+  "scripts": {
+    "start": "http-server . -p 8765 -c-1 --cors",
+    "serve": "http-server . -p 8765 -c-1 --cors"
+  },
+  "keywords": [
+    "tableau",
+    "viz-extension",
+    "worksheet-extension",
+    "d3",
+    "dataviz"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@tableau/extensions-api-types": "^1.17.0",
+    "http-server": "^14.1.1"
+  }
+}
