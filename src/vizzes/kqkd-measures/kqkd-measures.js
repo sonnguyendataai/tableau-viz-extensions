@@ -37,10 +37,6 @@ let paramName = null;
 /** Đã gắn listener parameter chưa (chỉ làm 1 lần). */
 let paramWired = false;
 
-/** DEBUG tạm: dòng đáy cho biết period nhận được gì (để soi "lỗi cột"). */
-let renderTick = 0;
-const DEBUG = true;
-
 const rowHdrWidth = 300;
 const CELL_MIN_W = 76;
 
@@ -268,20 +264,6 @@ function render(info) {
     const h = tr.getBoundingClientRect().height;
     for (const c of tr.cells) c.style.top = top + 'px';
     top += h;
-  }
-
-  // ---- DEBUG tạm: period fields + số cột kỳ ----
-  if (DEBUG) {
-    renderTick++;
-    const dbg = document.createElement('div');
-    dbg.style.cssText =
-      'position:fixed;bottom:0;left:0;right:0;font:11px/1.4 monospace;background:#111;color:#0f0;' +
-      'padding:4px 8px;z-index:99999;white-space:pre-wrap;max-height:96px;overflow:auto';
-    dbg.textContent =
-      `[dbg#${renderTick}] period-fields=[${periodFields.map((f) => '"' + f?.name + '"').join(', ')}] (cấp trong cùng="${periodFields[lastIdx]?.name}")\n` +
-      `subs(${subs.length}, ordinal cấp trong): [${subs.join(', ')}]  ·  maxSub=${maxSub}  ·  cột kỳ=${subs.length} → tổng cột = 4×${subs.length}=${4 * subs.length}\n` +
-      `sample path: ${JSON.stringify(subMeta.get(subs[0]))}  ·  năm=${years.join('/')} Y=${Y}${paramBound ? ' (parameter «' + paramName + '»)' : ' (dropdown)'}  ·  measures=${measureNames.length}`;
-    container.appendChild(dbg);
   }
 }
 
