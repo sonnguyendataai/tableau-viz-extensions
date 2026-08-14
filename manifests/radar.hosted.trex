@@ -21,7 +21,7 @@
     <author name="son.nguyen" email="son.nguyen@corp.local" organization="Tableau Viz Platform" website="https://viz.corp.local"/>
     <min-api-version>1.11</min-api-version>
     <source-location>
-      <url>https://viz.corp.local/tableau-viz/src/vizzes/radar/radar.html</url>
+      <url>https://sonnguyendataai.github.io/tableau-viz-extensions/src/vizzes/radar/radar.html</url>
     </source-location>
     <icon/>
 
