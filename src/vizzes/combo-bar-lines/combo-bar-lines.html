@@ -28,6 +28,13 @@
       pointer-events: none; font-size: 11px;
     }
     .line-label-bg { pointer-events: none; }
+    /* Nhãn group DRILL được: bật lại pointer-events (thắng .group-label vì 2 class). */
+    .group-label.drillable { pointer-events: auto; cursor: pointer; }
+    .group-label.drillable:hover { text-decoration: underline; }
+    /* Breadcrumb: crumb tổ tiên bấm được, crumb hiện tại thì không. */
+    .crumb { pointer-events: auto; cursor: pointer; font-size: 11px; }
+    .crumb:hover { text-decoration: underline; }
+    .crumb-current { pointer-events: none; cursor: default; }
   </style>
 </head>
 <body class="tableau-worksheet">

@@ -14,7 +14,10 @@
  *
  * Encoding (khai báo trong .trex):
  *   category  discrete-dimension, 1 field   → mỗi giá trị = 1 cụm cột + 1 điểm mỗi line
- *   group     discrete-dimension, 1 field   → (tùy chọn) super-group: tách khối + vạch đứt
+ *   group     discrete-dimension, 1..N field → HIERARCHY: mỗi field = 1 level. Level hiện
+ *                                              tại = các khối; bấm nhãn khối để DRILL xuống
+ *                                              level kế (breadcrumb để lên lại). 1 field =
+ *                                              super-group như cũ (không drill).
  *   bars      continuous-measure, 1..N      → CỤM cột, TRỤC TRÁI (giá trị tuyệt đối)
  *   lines     continuous-measure, 1..N      → nhiều ĐƯỜNG, TRỤC PHẢI (thường là %)
  *
@@ -33,6 +36,11 @@
  * Selection: mỗi category = 1 row = 1 tuple. Click bất kỳ cột/điểm nào của một
  * category → chọn nguyên tuple đó. Mỗi element mang $tupleId (core đọc lại để
  * selectTuplesAsync / hoverTupleAsync).
+ *
+ * Drill (Group = hierarchy): Tableau chỉ trả dữ liệu CẤP LÁ (category × mọi level).
+ * Ở cấp chưa sâu nhất ta tự gộp: Bars=SUM (đúng), Lines=AVG (xấp xỉ cho %/tỷ lệ);
+ * ở cấp lá mỗi ô = 1 row nên giá trị chính xác tuyệt đối. Bấm nhãn khối → drillPath
+ * dài thêm 1; breadcrumb "Tất cả › …" bấm để lên lại. drillPath giữ NGOÀI render().
  */
 
 import { initExtension } from '../../core/extension.js';
@@ -48,10 +56,18 @@ const CAT_LABEL_H = 44;   // chỗ cho nhãn category (xoay)
 const GAP_UNITS   = 0.7;  // bề rộng khoảng trống giữa 2 group (đơn vị = 1 slot category)
 const CAT_PAD     = 0.28; // padding hai bên trong 1 slot category (cho cụm cột)
 
+// ---- Trạng thái DRILL: sống NGOÀI render() để giữ qua mỗi lần vẽ lại ----
+// drillPath[i] = giá trị đã drill ở level i (dùng formattedValue để so khớp).
+let drillPath = [];
+// info mới nhất từ core — để tự re-render sau khi drill mà không cần chờ sự kiện.
+let latestInfo = null;
+
 /** @param {any} info */
 function render(info) {
+  latestInfo = info;                        // nhớ info mới nhất cho lần drill kế
   const { encodedData, encodingMap, selectedMarkIds, width, height, styles, bgRgb, container } = info;
   container.innerHTML = '';
+  const redraw = () => render(latestInfo);  // gọi sau khi đổi drillPath
 
   // ---- GUARD: cần category + ít nhất 1 measure ở shelf Bars ----
   const hasCategory = encodedData.some((r) => r.category?.[0] != null);
@@ -62,7 +78,8 @@ function render(info) {
     msg.className = 'viz-empty';
     msg.textContent =
       'Drop 1 dimension on "Category", 1+ measure on "Bars" (left axis), and ' +
-      '(optional) 1+ measure on "Lines" (right axis). Use "Group" to split into blocks.';
+      '(optional) 1+ measure on "Lines" (right axis). Drop a HIERARCHY on "Group" ' +
+      '(1+ levels) then click a group label to drill down.';
     container.appendChild(msg);
     return;
   }
@@ -70,30 +87,98 @@ function render(info) {
   const barNames = (encodingMap?.bars ?? []).map((f, j) => f?.name ?? `Bars ${j + 1}`);
   const lineNames = (encodingMap?.lines ?? []).map((f, j) => f?.name ?? `Lines ${j + 1}`);
   const nBars = barNames.length;
-  const hasGroup = (encodingMap?.group?.length ?? 0) > 0
-    && encodedData.some((r) => r.group?.[0] != null);
+  const nLines = lineNames.length;
 
-  // ---- Chuẩn hoá rows. Giữ cả value (số, cho scale) và formattedValue (nhãn) ----
+  // Group giờ là HIERARCHY: 1..N level (thứ tự shelf = trên→dưới của hierarchy).
+  const nLevels = encodingMap?.group?.length ?? 0;
+  const hasGroup = nLevels > 0 && encodedData.some((r) => r.group?.[0] != null);
+
+  // ---- Row cấp LÁ: granularity Tableau trả = category × MỌI level của group ----
   const num = (dv) => {
     const n = Number(dv?.value);
     return Number.isFinite(n) ? n : null;
   };
-  const rows = encodedData.map((r) => ({
+  const leaf = encodedData.map((r) => ({
     $tupleId: r.$tupleId,
     cat: r.category?.[0]?.formattedValue ?? '—',
-    group: hasGroup ? (r.group?.[0]?.formattedValue ?? '—') : null,
+    levels: hasGroup ? (r.group ?? []).map((dv) => dv?.formattedValue ?? '—') : [],
     bars: (r.bars ?? []).map((dv) => ({ v: num(dv), f: dv?.formattedValue })),
     lines: (r.lines ?? []).map((dv) => ({ v: num(dv), f: dv?.formattedValue })),
   }));
 
-  // ---- Gom row theo GROUP để cùng-group liền khối (super-group = khối ngoài) ----
-  // Tableau thường trả row theo thứ tự CATEGORY (đan xen các group). Không gom lại thì
-  // mỗi row đổi group → vạch đứt ở mọi cột + nhãn group đè lên nhau ở giữa chart.
-  // sort ổn định (stable) nên thứ tự category TRONG mỗi group được giữ nguyên.
-  if (hasGroup) {
+  // ---- DRILL: giữ drillPath hợp lệ với dữ liệu hiện tại ----
+  // Không drill quá level áp chót (level cuối là lá, hết con). Nếu data đổi (filter)
+  // làm path không còn khớp → cắt bớt tới prefix còn khớp.
+  if (!hasGroup) {
+    drillPath = [];
+  } else {
+    if (drillPath.length > nLevels - 1) drillPath = drillPath.slice(0, nLevels - 1);
+    while (drillPath.length > 0
+      && !leaf.some((r) => drillPath.every((v, i) => r.levels[i] === v))) {
+      drillPath = drillPath.slice(0, -1);
+    }
+  }
+  const curLevel = drillPath.length; // level đang hiển thị thành các "khối group"
+
+  // ---- Lọc theo path + GỘP lên level hiện tại → rows {cat, group, bars[], lines[]} ----
+  // Cấp chưa sâu nhất: tự gộp Bars=SUM, Lines=AVG (xấp xỉ %/tỷ lệ). Cấp lá: mỗi ô = 1
+  // row → dùng luôn value + formattedValue gốc (chính xác tuyệt đối).
+  let rows;
+  if (!hasGroup) {
+    rows = leaf.map((r) => ({
+      $tupleId: r.$tupleId, cat: r.cat, group: null, bars: r.bars, lines: r.lines,
+    }));
+  } else {
+    const filtered = leaf.filter((r) => drillPath.every((v, i) => r.levels[i] === v));
     const groupOrder = [];
-    rows.forEach((r) => { if (!groupOrder.includes(r.group)) groupOrder.push(r.group); });
-    rows.sort((a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group));
+    const catOrder = [];
+    const agg = new Map();
+    for (const r of filtered) {
+      const gv = r.levels[curLevel] ?? '—';
+      if (!groupOrder.includes(gv)) groupOrder.push(gv);
+      if (!catOrder.includes(r.cat)) catOrder.push(r.cat);
+      const key = `${gv}\u0000${r.cat}`;
+      let cell = agg.get(key);
+      if (!cell) {
+        cell = {
+          count: 0, tupleId: null,
+          bars: Array.from({ length: nBars }, () => ({ sum: 0, n: 0, f: undefined })),
+          lines: Array.from({ length: nLines }, () => ({ sum: 0, n: 0, f: undefined, pct: false })),
+        };
+        agg.set(key, cell);
+      }
+      cell.count += 1;
+      cell.tupleId = cell.count === 1 ? r.$tupleId : null; // ô 1-row → giữ tuple để select đúng
+      r.bars.forEach((b, j) => {
+        const c = cell.bars[j];
+        if (c && b.v != null) { c.sum += b.v; c.n += 1; c.f = b.f; }
+      });
+      r.lines.forEach((b, j) => {
+        const c = cell.lines[j];
+        if (c && b.v != null) {
+          c.sum += b.v; c.n += 1; c.f = b.f;
+          if (typeof b.f === 'string' && b.f.includes('%')) c.pct = true;
+        }
+      });
+    }
+    rows = [];
+    for (const gv of groupOrder) {
+      for (const cat of catOrder) {
+        const cell = agg.get(`${gv}\u0000${cat}`);
+        if (!cell) continue;
+        const exact = cell.count === 1; // 1 row ⇒ dùng luôn value + format gốc Tableau
+        rows.push({
+          $tupleId: cell.tupleId,
+          cat, group: gv,
+          bars: cell.bars.map((c) => (c.n === 0
+            ? { v: null, f: undefined }
+            : { v: c.sum, f: exact ? c.f : d3.format('~s')(c.sum) })),
+          lines: cell.lines.map((c) => (c.n === 0
+            ? { v: null, f: undefined }
+            : { v: c.sum / c.n, f: exact ? c.f : fmtAggLine(c.sum / c.n, c.pct) })),
+        });
+      }
+    }
   }
 
   // ---- Bố cục dọc: legend đáy → group label → category label → vùng vẽ ----
@@ -103,10 +188,12 @@ function render(info) {
   const legend = buildLegend(barNames, lineNames, Math.max(0, width - MARGIN.left - MARGIN.right));
   const legendH = legend.rows * 18 + 10;
   const groupLabelH = hasGroup ? 20 : 0;
+  const showBreadcrumb = hasGroup && nLevels > 1; // chỉ khi group là hierarchy drill được
+  const breadcrumbH = showBreadcrumb ? 20 : 0;
 
   const innerW = Math.max(0, width - MARGIN.left - MARGIN.right);
-  const innerH = Math.max(0, height - MARGIN.top - CAT_LABEL_H - groupLabelH - legendH);
-  const plotTop = MARGIN.top;
+  const innerH = Math.max(0, height - MARGIN.top - breadcrumbH - CAT_LABEL_H - groupLabelH - legendH);
+  const plotTop = MARGIN.top + breadcrumbH;
   const plotBottom = plotTop + innerH;
 
   // ---- X: layout thủ công theo "unit" để chèn khoảng trống giữa các group ----
@@ -176,6 +263,42 @@ function render(info) {
       .call(d3.axisRight(yRight).ticks(5))
       .attr('color', textColor)
       .selectAll('text').attr('class', 'axis-label').attr('fill', textColor);
+  }
+
+  // ---- Breadcrumb drill (chỉ khi group là hierarchy nhiều level) ----
+  // "Tất cả › <đã drill…>". Bấm 1 crumb → cắt drillPath về đúng level đó.
+  if (showBreadcrumb) {
+    const crumbs = ['Tất cả', ...drillPath];
+    const bg = svg.append('g');
+    let bx = MARGIN.left;
+    const by = 16;
+    crumbs.forEach((label, k) => {
+      if (k > 0) {
+        bg.append('text').attr('x', bx).attr('y', by)
+          .attr('fill', textColor).attr('opacity', 0.45).text('›');
+        bx += 12;
+      }
+      const isLast = k === crumbs.length - 1;
+      const t = bg.append('text')
+        .attr('class', isLast ? 'crumb crumb-current' : 'crumb')
+        .attr('x', bx).attr('y', by)
+        .attr('fill', isLast ? textColor : '#2f6f8f')
+        .attr('font-weight', isLast ? 'bold' : 'normal')
+        .text(label);
+      if (!isLast) {
+        t.on('click', (event) => {
+          event.stopPropagation();          // không để core hiểu là click nền
+          drillPath = drillPath.slice(0, k); // k=0 ('Tất cả') → về gốc
+          redraw();
+        });
+      }
+      bx += String(label).length * 6.6 + 10;
+    });
+    if (curLevel < nLevels - 1) {
+      bg.append('text').attr('x', bx + 2).attr('y', by)
+        .attr('fill', textColor).attr('opacity', 0.4).attr('font-style', 'italic')
+        .text('• bấm nhãn nhóm để drill ▸');
+    }
   }
 
   const y0 = yLeft(0);
@@ -310,14 +433,22 @@ function render(info) {
       groupSpans[r.group] = s;
     });
     const gy = plotBottom + CAT_LABEL_H + 4;
+    const drillable = curLevel < nLevels - 1; // còn level con bên dưới → cho drill
     Object.values(groupSpans).forEach((s) => {
-      svg.append('text')
-        .attr('class', 'group-label')
+      const t = svg.append('text')
+        .attr('class', drillable ? 'group-label drillable' : 'group-label')
         .attr('x', (s.min + s.max) / 2).attr('y', gy)
         .attr('text-anchor', 'middle')
         .attr('font-weight', 'bold')
-        .attr('fill', textColor)
-        .text(s.label);
+        .attr('fill', drillable ? '#1f6f6f' : textColor)
+        .text(drillable ? `${s.label} ▸` : s.label);
+      if (drillable) {
+        t.on('click', (event) => {
+          event.stopPropagation();          // đừng để core hiểu là click nền (clear selection)
+          drillPath = [...drillPath, s.label];
+          redraw();
+        });
+      }
     });
   }
 
@@ -367,6 +498,17 @@ function buildLegend(barNames, lineNames, maxW) {
     x += w;
   }
   return { items, rows: row + 1 };
+}
+
+/**
+ * Format nhãn Lines ở CẤP GỘP (giá trị = trung bình các dòng con — xấp xỉ).
+ * pct=true khi formattedValue gốc có '%' ⇒ underlying thường là phân số (0.41 ↔ "41%").
+ * @param {number} v   giá trị trung bình
+ * @param {boolean} pct
+ */
+function fmtAggLine(v, pct) {
+  if (pct) return Math.abs(v) <= 1.5 ? d3.format('.1%')(v) : `${d3.format(',.1f')(v)}%`;
+  return d3.format('~s')(v);
 }
 
 window.onload = () => initExtension({ render, containerId: 'content' });

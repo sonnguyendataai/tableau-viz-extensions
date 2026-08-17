@@ -24,15 +24,19 @@
       <encoding-icon token="letter-x"/>
     </encoding>
 
-    <!-- Group (tùy chọn): super-group ngoài (vd Cho vay / Huy động) → tách khối + vạch đứt.
+    <!-- Group / Hierarchy (tùy chọn): thả 1..N dimension = các LEVEL của hierarchy
+         (thứ tự trên shelf = trên→dưới). Mỗi giá trị level hiện tại = 1 khối; bấm nhãn
+         khối để DRILL xuống level kế (lọc theo giá trị vừa bấm), breadcrumb để lên lại.
+         1 field → super-group như cũ (không drill). Bấm '+' trên pill hierarchy trong
+         Tableau để thêm level vào shelf.
          Bỏ <encoding-icon>: chỉ 'letter-x','letter-y','color','size','text' là token
          hợp lệ chắc chắn; 'detail'/'bar'/'line' bị parser từ chối. Shelf vẫn chạy. -->
     <encoding id="group">
-      <display-name>Group</display-name>
+      <display-name>Group / Hierarchy (drill)</display-name>
       <role-spec>
         <role-type>discrete-dimension</role-type>
       </role-spec>
-      <fields max-count="1"/>
+      <fields max-count="8"/>
     </encoding>
 
     <!-- Bars: 1..N measure liên tục → CỤM cột, dùng TRỤC TRÁI (giá trị tuyệt đối) -->

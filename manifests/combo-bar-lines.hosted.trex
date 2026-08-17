@@ -36,12 +36,14 @@
       <encoding-icon token="letter-x"/>
     </encoding>
 
+    <!-- Group / Hierarchy: thả 1..N level (thứ tự shelf = trên→dưới). Bấm nhãn khối
+         để DRILL xuống level kế; breadcrumb để lên lại. 1 field = super-group cũ. -->
     <encoding id="group">
-      <display-name>Group</display-name>
+      <display-name>Group / Hierarchy (drill)</display-name>
       <role-spec>
         <role-type>discrete-dimension</role-type>
       </role-spec>
-      <fields max-count="1"/>
+      <fields max-count="8"/>
     </encoding>
 
     <encoding id="bars">
