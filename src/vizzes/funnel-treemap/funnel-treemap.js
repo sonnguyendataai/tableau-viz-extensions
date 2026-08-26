@@ -78,7 +78,11 @@ function renderFunnel(info) {
   const innerH = Math.max(40, height - M.top - M.bottom);
   const cx = M.left + innerW / 2;
   const maxV = d3.max(rows, (r) => r.value) || 1;
-  const W = (v) => Math.max(2, (v / maxV) * innerW);      // stage width by value
+  // Floor+cap the width (like ECharts minSize): the top stage is framed with a
+  // small side margin instead of spanning edge-to-edge — fixes the "empty Lead"
+  // wedges — and the taper stays gentle & balanced.
+  const WMIN = 0.34, WMAX = 0.92;
+  const W = (v) => (WMIN + (WMAX - WMIN) * (v / maxV)) * innerW;
   const gap = Math.min(6, innerH / rows.length * 0.09);
   const bh = (innerH - gap * (rows.length - 1)) / rows.length;
 
