@@ -79,7 +79,7 @@ function renderFunnel(info) {
   const cx = M.left + innerW / 2;
   const maxV = d3.max(rows, (r) => r.value) || 1;
   const W = (v) => Math.max(2, (v / maxV) * innerW);      // stage width by value
-  const gap = Math.min(8, innerH / rows.length * 0.12);
+  const gap = Math.min(6, innerH / rows.length * 0.09);
   const bh = (innerH - gap * (rows.length - 1)) / rows.length;
 
   const fog = makeFog(bgRgb);
@@ -90,7 +90,7 @@ function renderFunnel(info) {
     const yTop = M.top + i * (bh + gap);
     const yBot = yTop + bh;
     const topW = W(r.value);
-    const botW = W(rows[i + 1] ? rows[i + 1].value : r.value * 0.82); // taper toward next stage
+    const botW = W(rows[i + 1] ? rows[i + 1].value : r.value * 0.9); // taper toward next stage
     const color = DEPTH[i % DEPTH.length];
     const fill = anySel && !selectedMarkIds.has(r.$tupleId) ? fog(color) : color;
     const poly = [
@@ -131,8 +131,10 @@ function renderTreemap(info) {
   const rows = catValRows(encodedData).filter((r) => r.value > 0).sort((a, b) => b.value - a.value);
   if (!rows.length) return empty(container, 'Drop a dimension on "Category" and a measure on "Value".');
 
+  // paddingOuter keeps rects off the card's rounded edges (avoids the clipped-label
+  // glitch); a small size inset guarantees the bottom row never hugs the card edge.
   const root = d3.hierarchy({ children: rows }).sum((d) => d.value ?? 0);
-  d3.treemap().size([width, height]).paddingInner(3).round(true)(root);
+  d3.treemap().size([width - 2, height - 2]).paddingOuter(2).paddingInner(4).round(true)(root);
 
   const fog = makeFog(bgRgb);
   const anySel = selectedMarkIds.size > 0;
@@ -148,12 +150,15 @@ function renderTreemap(info) {
       .attr('x', leaf.x0).attr('y', leaf.y0).attr('width', w).attr('height', h)
       .attr('rx', 6).attr('fill', fill).attr('stroke', '#fff').attr('stroke-width', 2);
     rect.node().__data__ = r;
-    if (w > 54 && h > 34) {
+    if (w > 46 && h > 22) {
       const tl = g.append('g').attr('class', 'lbl');
-      tl.append('text').attr('x', leaf.x0 + 10).attr('y', leaf.y0 + 22)
+      const clamp = (yy) => Math.min(yy, leaf.y1 - 8);      // never spill past the rect
+      tl.append('text').attr('x', leaf.x0 + 10).attr('y', clamp(leaf.y0 + 20))
         .attr('fill', '#fff').attr('font-weight', 700).attr('font-size', 14).text(r.label);
-      tl.append('text').attr('x', leaf.x0 + 10).attr('y', leaf.y0 + 42)
-        .attr('fill', '#ffffffe6').attr('font-size', 13).text(r.fmt ?? d3.format(',')(r.value));
+      if (h > 44) {
+        tl.append('text').attr('x', leaf.x0 + 10).attr('y', clamp(leaf.y0 + 38))
+          .attr('fill', '#ffffffe6').attr('font-size', 13).text(r.fmt ?? d3.format(',')(r.value));
+      }
     }
   });
   container.appendChild(svg.node());
