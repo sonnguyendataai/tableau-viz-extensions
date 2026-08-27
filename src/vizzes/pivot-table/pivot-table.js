@@ -15,6 +15,11 @@
  *   cols    discrete-dimension, 0..5  → header cột NHÓM nhiều tầng bên TRÊN
  *   values  measure, 1..N             → giá trị ô; >1 measure → thêm 1 tầng tên measure
  *
+ * ĐỔI THỨ TỰ FIELD DÒNG (drag & drop): mỗi field dòng có 1 "chip" tên ở dải header
+ * góc trên-trái (thay ô góc gộp cũ). User KÉO-THẢ chip để đảo thứ tự cấp lồng ngay
+ * trên bảng. Thứ tự lưu vào workbook settings (SETTINGS.rowOrder = mảng tên field);
+ * mỗi lần render áp lại qua hoán vị `perm` — bền vững khi thêm/bớt field trên shelf.
+ *
  * render(info) nhận (xem src/core/extension.js để biết đầy đủ):
  *   info.encodedData     Array<{ $tupleId, rows?:DV[], cols?:DV[], values?:DV[] }>
  *   info.encodingMap     { rows?:[{name}], cols?:[{name}], values?:[{name}] }
@@ -42,6 +47,7 @@ const SETTINGS = {
   headerBg:    'pivot.headerBg',
   headerText:  'pivot.headerText',
   zebra:       'pivot.zebra',
+  rowOrder:    'pivot.rowOrder', // JSON mảng tên field dòng (thứ tự do user kéo-thả)
 };
 const DEFAULTS = {
   cornerLabel: 'ĐVT: Triệu VNĐ',
@@ -75,16 +81,22 @@ function render(info) {
   const { encodedData, encodingMap, selectedMarkIds, styles, bgRgb, container } = info;
   container.innerHTML = '';
 
-  const rowFields = encodingMap?.rows ?? [];
+  const rowFieldsRaw = encodingMap?.rows ?? []; // thứ tự GỐC theo shelf (Tableau trả)
   const colFields = encodingMap?.cols ?? [];
   const measureFields = encodingMap?.values ?? [];
 
+  // Tên field dòng theo thứ tự gốc + hoán vị hiển thị (do user kéo-thả, lưu ở settings).
+  // perm[displayLevel] = chỉ số field GỐC → dùng để trích rPath & gán nhãn header.
+  const origRowNames = rowFieldsRaw.map((f, i) => f?.name ?? `Row ${i + 1}`);
+  const perm = resolveRowPerm(origRowNames, readSetting(SETTINGS.rowOrder, ''));
+  const rowFieldNames = perm.map((oi) => origRowNames[oi]); // tên theo thứ tự hiển thị
+
   // ---- GUARD: cần >=1 measure ở "Values" và >=1 dimension (rows hoặc cols) ----
-  const hasAnyDim = rowFields.length > 0 || colFields.length > 0;
+  const hasAnyDim = rowFieldsRaw.length > 0 || colFields.length > 0;
   if (!encodedData.length || measureFields.length === 0 || !hasAnyDim) {
     container.appendChild(
       emptyState({
-        rows: rowFields.map((f) => f?.name).filter(Boolean),
+        rows: origRowNames.filter(Boolean),
         cols: colFields.map((f) => f?.name).filter(Boolean),
         values: measureFields.map((f) => f?.name).filter(Boolean),
         dataRows: encodedData.length,
@@ -112,7 +124,9 @@ function render(info) {
   const cellMap = new Map();
 
   for (const r of encodedData) {
-    const rPath = (r.rows ?? []).map((dv) => dv?.formattedValue ?? EMPTY);
+    const rRaw = r.rows ?? [];
+    // Trích path theo THỨ TỰ HIỂN THỊ (perm), không theo thứ tự gốc của r.rows.
+    const rPath = perm.map((oi) => rRaw[oi]?.formattedValue ?? EMPTY);
     const cPath = (r.cols ?? []).map((dv) => dv?.formattedValue ?? EMPTY);
     const rKey = rPath.join('\x00');
     const cKey = cPath.join('\x00');
@@ -139,7 +153,7 @@ function render(info) {
   }
 
   const numColLevels = colFields.length + (showMeasureLevel ? 1 : 0); // luôn >= 1
-  const rowLevels = rowFields.length;
+  const rowLevels = rowFieldsRaw.length;
 
   // ---- Cấu hình + theme ----
   const cornerLabel = readSetting(SETTINGS.cornerLabel, DEFAULTS.cornerLabel);
@@ -167,9 +181,25 @@ function render(info) {
   const leftOff = [0];
   for (let L = 1; L < rowLevels; L++) leftOff[L] = leftOff[L - 1] + rowHdrWidth(L - 1);
 
+  // Kéo-thả chip: di chuyển field dòng từ vị trí hiển thị `from` → `to`, lưu thứ tự
+  // mới (mảng tên) vào settings rồi ép core vẽ lại (dispatch 'resize').
+  const onReorder = (from, to) => {
+    if (from === to) return;
+    const names = perm.map((oi) => origRowNames[oi]);
+    const [moved] = names.splice(from, 1);
+    names.splice(to, 0, moved);
+    const rerender = () => window.dispatchEvent(new Event('resize'));
+    try {
+      tableau.extensions.settings.set(SETTINGS.rowOrder, JSON.stringify(names));
+      tableau.extensions.settings.saveAsync().then(rerender).catch(rerender);
+    } catch (_e) {
+      rerender();
+    }
+  };
+
   buildHead(table, {
     leaves, colFields, numColLevels, rowLevels, showMeasureLevel,
-    measureNames, cornerLabel, leftOff,
+    measureNames, cornerLabel, leftOff, rowFieldNames, onReorder,
   });
 
   buildBody(table, {
@@ -200,22 +230,49 @@ function render(info) {
 function buildHead(table, ctx) {
   const {
     leaves, colFields, numColLevels, rowLevels, showMeasureLevel,
-    measureNames, cornerLabel, leftOff,
+    measureNames, cornerLabel, leftOff, rowFieldNames, onReorder,
   } = ctx;
   const thead = table.createTHead();
 
   for (let L = 0; L < numColLevels; L++) {
     const tr = thead.insertRow();
 
-    // Ô góc trên-trái: chỉ ở hàng header đầu, span toàn bộ cột nhãn × mọi tầng.
+    // Dải góc trên-trái: MỖI field dòng = 1 chip (kéo-thả đổi thứ tự), thay ô góc
+    // gộp cũ. Mỗi chip span toàn bộ tầng header (rowSpan) & dính-trái theo leftOff.
+    // Chip đầu (cấp 0) mang thêm nhãn đơn vị (cornerLabel) cho khỏi mất.
     if (L === 0 && rowLevels > 0) {
-      const corner = document.createElement('th');
-      corner.className = 'pv-corner';
-      corner.rowSpan = numColLevels;
-      corner.colSpan = rowLevels;
-      corner.textContent = cornerLabel;
-      corner.style.left = '0px';
-      tr.appendChild(corner);
+      for (let f = 0; f < rowLevels; f++) {
+        const th = document.createElement('th');
+        th.className = 'pv-corner pv-fieldhdr';
+        th.rowSpan = numColLevels;
+        th.style.left = leftOff[f] + 'px';
+        th.style.minWidth = rowHdrWidth(f) + 'px';
+        th.style.maxWidth = rowHdrWidth(f) + 'px';
+        th.style.width = rowHdrWidth(f) + 'px';
+
+        const chip = document.createElement('div');
+        chip.className = 'pv-chip';
+        const grip = document.createElement('span');
+        grip.className = 'pv-grip';
+        grip.textContent = '⠿';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'pv-fieldname';
+        nameEl.textContent = rowFieldNames[f];
+        chip.appendChild(grip);
+        chip.appendChild(nameEl);
+        chip.title = rowFieldNames[f] + ' — kéo để đổi thứ tự cấp lồng';
+        th.appendChild(chip);
+
+        if (f === 0 && cornerLabel) {
+          const unit = document.createElement('div');
+          unit.className = 'pv-unit';
+          unit.textContent = cornerLabel;
+          th.appendChild(unit);
+        }
+
+        if (rowLevels > 1) attachFieldDrag(th, f, onReorder);
+        tr.appendChild(th);
+      }
     }
 
     if (L < colFields.length) {
@@ -240,7 +297,7 @@ function buildHead(table, ctx) {
       }
     }
   }
-  void showMeasureLevel; void leftOff; // (dùng ở buildBody; giữ ký hiệu cho rõ ctx)
+  void showMeasureLevel; // (numColLevels đã mã hoá; giữ ký hiệu cho rõ ctx)
 }
 
 /* =====================================================================
@@ -400,6 +457,97 @@ function shade(hex, amt) {
   const f = 1 - Math.max(0, Math.min(1, amt));
   const h2 = (n) => Math.round(n * f).toString(16).padStart(2, '0');
   return '#' + h2(r) + h2(g) + h2(b);
+}
+
+/**
+ * Suy ra hoán vị thứ tự HIỂN THỊ của các field dòng từ thứ tự đã lưu.
+ * Trả mảng chỉ số GỐC theo thứ tự hiển thị (length = số field dòng).
+ * - Bám theo `savedStr` (JSON mảng tên) khi hợp lệ; field còn tồn tại giữ đúng chỗ.
+ * - Field MỚI (chưa có trong savedStr) → nối cuối theo thứ tự gốc.
+ * - Tên đã lưu nhưng không còn trên shelf → bỏ qua.
+ * Luôn trả identity khi savedStr rỗng/hỏng → an toàn tuyệt đối.
+ * @param {string[]} origNames  tên field dòng theo thứ tự gốc (shelf)
+ * @param {string} savedStr     JSON mảng tên (SETTINGS.rowOrder) hoặc ''
+ * @returns {number[]}
+ */
+function resolveRowPerm(origNames, savedStr) {
+  const identity = origNames.map((_v, i) => i);
+  if (!savedStr) return identity;
+
+  let saved;
+  try { saved = JSON.parse(savedStr); } catch (_e) { return identity; }
+  if (!Array.isArray(saved)) return identity;
+
+  const remaining = new Set(identity);
+  const perm = [];
+  for (const name of saved) {
+    for (const oi of remaining) {
+      if (origNames[oi] === name) { perm.push(oi); remaining.delete(oi); break; }
+    }
+  }
+  // Field mới (không nằm trong saved) → nối cuối theo thứ tự gốc.
+  for (const oi of identity) if (remaining.has(oi)) perm.push(oi);
+  return perm;
+}
+
+/**
+ * State kéo-thả cấp module (chỉ 1 thao tác kéo tại một thời điểm).
+ * @type {number|null}
+ */
+let dragFromLevel = null;
+
+/** Xoá mọi class trạng thái kéo-thả còn sót trong DOM. */
+function clearDragMarks() {
+  document
+    .querySelectorAll('.pv-dragging, .pv-drop-target')
+    .forEach((el) => el.classList.remove('pv-dragging', 'pv-drop-target'));
+}
+
+/**
+ * Gắn HTML5 drag-and-drop cho một chip header field dòng ở cấp hiển thị `level`.
+ * Thả lên chip khác → gọi onReorder(from, to). Chỉ gắn khi có ≥2 field dòng.
+ * @param {HTMLElement} th
+ * @param {number} level
+ * @param {(from:number, to:number)=>void} onReorder
+ */
+function attachFieldDrag(th, level, onReorder) {
+  th.setAttribute('draggable', 'true');
+
+  th.addEventListener('dragstart', (e) => {
+    dragFromLevel = level;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(level)); } catch (_e) { /* Safari */ }
+    }
+    th.classList.add('pv-dragging');
+  });
+
+  th.addEventListener('dragenter', (e) => {
+    if (dragFromLevel !== null && dragFromLevel !== level) e.preventDefault();
+  });
+
+  th.addEventListener('dragover', (e) => {
+    if (dragFromLevel === null || dragFromLevel === level) return;
+    e.preventDefault(); // cho phép drop
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    th.classList.add('pv-drop-target');
+  });
+
+  th.addEventListener('dragleave', () => th.classList.remove('pv-drop-target'));
+
+  th.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    th.classList.remove('pv-drop-target');
+    const from = dragFromLevel;
+    dragFromLevel = null;
+    if (from !== null && from !== level) onReorder(from, level);
+  });
+
+  th.addEventListener('dragend', () => {
+    dragFromLevel = null;
+    clearDragMarks();
+  });
 }
 
 /* =====================================================================

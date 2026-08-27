@@ -78,6 +78,26 @@
       vertical-align: bottom;
     }
 
+    /* Chip header field dòng (kéo-thả đổi thứ tự) — nằm trong dải góc, dính trái. */
+    .pv-fieldhdr { vertical-align: top; }
+    .pv-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      cursor: grab; user-select: none; -webkit-user-select: none;
+      max-width: 100%;
+    }
+    .pv-chip:active { cursor: grabbing; }
+    .pv-grip { opacity: .75; font-size: 13px; line-height: 1; letter-spacing: -1px; }
+    .pv-fieldname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-unit { margin-top: 5px; font-weight: 700; font-size: 11px; opacity: .95; }
+
+    /* Trạng thái kéo-thả: nguồn mờ đi; đích hiện đường chèn (viền trái đứt). */
+    .pv-dragging { opacity: .4; }
+    .pv-drop-target { outline: 2px dashed #fff; outline-offset: -3px; }
+    .pv-drop-target::before {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 0;
+      width: 3px; background: #fff;
+    }
+
     /* --- Header hàng (nhãn bên trái) — dính trái, nền sáng --- */
     .pv-rowhdr {
       position: sticky;
