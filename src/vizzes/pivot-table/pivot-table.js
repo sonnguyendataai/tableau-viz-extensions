@@ -122,6 +122,10 @@ function render(info) {
   const colOrder = [];
   /** @type {Map<string, any>} rowKey \x01 colKey → encodedData row */
   const cellMap = new Map();
+  // Rank mỗi giá trị theo THỨ TỰ XUẤT HIỆN gốc, cho từng field dòng (theo chỉ số GỐC).
+  // Dùng để sắp lại hàng theo hierarchy MỚI mà vẫn giữ đúng thứ tự sort của mỗi field.
+  /** @type {Array<Map<string,number>>} */
+  const rankByField = rowFieldsRaw.map(() => new Map());
 
   for (const r of encodedData) {
     const rRaw = r.rows ?? [];
@@ -133,7 +137,27 @@ function render(info) {
     if (!rowMeta.has(rKey)) { rowMeta.set(rKey, { key: rKey, path: rPath }); rowOrder.push(rKey); }
     if (!colMeta.has(cKey)) { colMeta.set(cKey, { key: cKey, path: cPath }); colOrder.push(cKey); }
     cellMap.set(rKey + '\x01' + cKey, r); // last-wins nếu trùng (mọi dim nên map vào rows/cols)
+
+    for (let oi = 0; oi < rowFieldsRaw.length; oi++) {
+      const v = rRaw[oi]?.formattedValue ?? EMPTY;
+      if (!rankByField[oi].has(v)) rankByField[oi].set(v, rankByField[oi].size);
+    }
   }
+
+  // Sắp lại rowOrder theo hierarchy HIỂN THỊ: so cấp ngoài→trong (perm), mỗi cấp dùng
+  // rank xuất hiện gốc của field đó → hàng cùng nhóm liền nhau, thứ tự bám sort gốc.
+  // (perm identity → tái tạo đúng thứ tự Tableau ban đầu.)
+  rowOrder.sort((a, b) => {
+    const pa = rowMeta.get(a).path;
+    const pb = rowMeta.get(b).path;
+    for (let L = 0; L < perm.length; L++) {
+      const rank = rankByField[perm[L]];
+      const ra = rank.get(pa[L]) ?? 0;
+      const rb = rank.get(pb[L]) ?? 0;
+      if (ra !== rb) return ra - rb;
+    }
+    return 0;
+  });
 
   // ---- Cột lá (leaf): tổ hợp (colKey × measure). Bỏ tầng measure khi 1 measure + có col. ----
   /** @type {Array<{colKey:string,colPath:string[],mIdx:number}>} */
@@ -244,6 +268,7 @@ function buildHead(table, ctx) {
       for (let f = 0; f < rowLevels; f++) {
         const th = document.createElement('th');
         th.className = 'pv-corner pv-fieldhdr';
+        th.dataset.level = String(f); // cấp hiển thị — onUp đọc lại làm target
         th.rowSpan = numColLevels;
         th.style.left = leftOff[f] + 'px';
         th.style.minWidth = rowHdrWidth(f) + 'px';
@@ -490,12 +515,6 @@ function resolveRowPerm(origNames, savedStr) {
   return perm;
 }
 
-/**
- * State kéo-thả cấp module (chỉ 1 thao tác kéo tại một thời điểm).
- * @type {number|null}
- */
-let dragFromLevel = null;
-
 /** Xoá mọi class trạng thái kéo-thả còn sót trong DOM. */
 function clearDragMarks() {
   document
@@ -504,50 +523,100 @@ function clearDragMarks() {
 }
 
 /**
- * Gắn HTML5 drag-and-drop cho một chip header field dòng ở cấp hiển thị `level`.
- * Thả lên chip khác → gọi onReorder(from, to). Chỉ gắn khi có ≥2 field dòng.
+ * Chặn ĐÚNG MỘT click ngay sau khi thả (trong 300ms) để core không hiểu thao tác
+ * kéo là "click nền" → xoá selection. Tự gỡ nếu không có click nào tới.
+ */
+function suppressNextClick() {
+  const handler = (ev) => {
+    ev.stopPropagation();
+    ev.stopImmediatePropagation();
+    document.removeEventListener('click', handler, true);
+  };
+  document.addEventListener('click', handler, true);
+  setTimeout(() => document.removeEventListener('click', handler, true), 300);
+}
+
+/**
+ * Gắn kéo-thả bằng POINTER EVENTS (không dùng HTML5 native drag).
+ *
+ * QUAN TRỌNG: trong Tableau Desktop (nền Chromium), một native drag (draggable +
+ * dataTransfer) THOÁT khỏi iframe của extension và bị Tableau bắt như "thả file"
+ * → tạo data source rỗng `Dropped_...` → lỗi "Text file has no lines". Dùng
+ * mousedown/mousemove/mouseup giữ toàn bộ thao tác TRONG iframe nên Tableau không
+ * can thiệp. Chỉ gắn khi có ≥2 field dòng.
  * @param {HTMLElement} th
- * @param {number} level
+ * @param {number} level      cấp hiển thị của chip (đọc lại target qua dataset.level)
  * @param {(from:number, to:number)=>void} onReorder
  */
 function attachFieldDrag(th, level, onReorder) {
-  th.setAttribute('draggable', 'true');
-
-  th.addEventListener('dragstart', (e) => {
-    dragFromLevel = level;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', String(level)); } catch (_e) { /* Safari */ }
-    }
-    th.classList.add('pv-dragging');
+  th.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;      // chỉ chuột trái
+    e.preventDefault();              // chặn bôi đen text / native drag
+    e.stopPropagation();
+    beginPointerDrag(th, level, onReorder);
   });
+}
 
-  th.addEventListener('dragenter', (e) => {
-    if (dragFromLevel !== null && dragFromLevel !== level) e.preventDefault();
-  });
+/**
+ * Vòng đời một thao tác kéo pointer: theo dõi chip dưới con trỏ, thả → onReorder.
+ * @param {HTMLElement} sourceTh
+ * @param {number} fromLevel
+ * @param {(from:number, to:number)=>void} onReorder
+ */
+function beginPointerDrag(sourceTh, fromLevel, onReorder) {
+  clearDragMarks();
+  sourceTh.classList.add('pv-dragging');
+  document.body.style.cursor = 'grabbing';
+  /** @type {HTMLElement|null} */
+  let overTh = null;
 
-  th.addEventListener('dragover', (e) => {
-    if (dragFromLevel === null || dragFromLevel === level) return;
-    e.preventDefault(); // cho phép drop
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    th.classList.add('pv-drop-target');
-  });
+  const chipUnder = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    const th = el && el.closest ? el.closest('.pv-fieldhdr') : null;
+    return th && th !== sourceTh ? /** @type {HTMLElement} */ (th) : null;
+  };
 
-  th.addEventListener('dragleave', () => th.classList.remove('pv-drop-target'));
-
-  th.addEventListener('drop', (e) => {
+  const onMove = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    th.classList.remove('pv-drop-target');
-    const from = dragFromLevel;
-    dragFromLevel = null;
-    if (from !== null && from !== level) onReorder(from, level);
-  });
+    const next = chipUnder(e.clientX, e.clientY);
+    if (next !== overTh) {
+      if (overTh) overTh.classList.remove('pv-drop-target');
+      overTh = next;
+      if (overTh) overTh.classList.add('pv-drop-target');
+    }
+  };
 
-  th.addEventListener('dragend', () => {
-    dragFromLevel = null;
+  const cleanup = () => {
+    sourceTh.classList.remove('pv-dragging');
+    if (overTh) overTh.classList.remove('pv-drop-target');
+    document.body.style.cursor = '';
+    document.removeEventListener('mousemove', onMove, true);
+    document.removeEventListener('mouseup', onUp, true);
+    document.removeEventListener('keydown', onKey, true);
     clearDragMarks();
-  });
+  };
+
+  function onUp(e) {
+    e.stopPropagation();
+    const target = overTh;
+    cleanup();
+    if (target) {
+      const toLevel = Number(target.dataset.level);
+      if (Number.isInteger(toLevel) && toLevel !== fromLevel) {
+        suppressNextClick();       // giữ selection qua lần re-render
+        onReorder(fromLevel, toLevel);
+      }
+    }
+  }
+
+  function onKey(e) {
+    if (e.key === 'Escape') cleanup(); // huỷ kéo
+  }
+
+  document.addEventListener('mousemove', onMove, true);
+  document.addEventListener('mouseup', onUp, true);
+  document.addEventListener('keydown', onKey, true);
 }
 
 /* =====================================================================
