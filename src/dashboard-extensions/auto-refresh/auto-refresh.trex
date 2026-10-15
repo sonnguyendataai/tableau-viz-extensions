@@ -14,14 +14,14 @@
       <url>http://localhost:8765/src/dashboard-extensions/auto-refresh/auto-refresh.html</url>
     </source-location>
     <icon/>
-    <!-- Configure... trên menu zone → mở auto-refresh-config.html. -->
-    <context-menu>
-      <configure-context-menu-item />
-    </context-menu>
     <!-- getDataSourcesAsync cần full data. -->
     <permissions>
       <permission>full data</permission>
     </permissions>
+    <!-- Configure... trên menu zone → mở auto-refresh-config.html. -->
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
   </dashboard-extension>
 
   <resources>

@@ -14,12 +14,12 @@
       <url>https://sonnguyendataai.github.io/tableau-viz-extensions/src/dashboard-extensions/auto-refresh/auto-refresh.html</url>
     </source-location>
     <icon/>
-    <context-menu>
-      <configure-context-menu-item />
-    </context-menu>
     <permissions>
       <permission>full data</permission>
     </permissions>
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
   </dashboard-extension>
 
   <resources>

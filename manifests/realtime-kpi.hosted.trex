@@ -13,13 +13,13 @@
       <url>https://sonnguyendataai.github.io/tableau-viz-extensions/src/dashboard-extensions/realtime-kpi/realtime-kpi.html</url>
     </source-location>
     <icon/>
-    <context-menu>
-      <configure-context-menu-item />
-    </context-menu>
     <!-- getDataSourcesAsync needs full data. -->
     <permissions>
       <permission>full data</permission>
     </permissions>
+    <context-menu>
+      <configure-context-menu-item />
+    </context-menu>
   </dashboard-extension>
   <resources>
     <resource id="name">
