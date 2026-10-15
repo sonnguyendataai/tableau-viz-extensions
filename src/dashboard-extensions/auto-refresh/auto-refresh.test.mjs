@@ -8,8 +8,9 @@ import {
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-test('clampSeconds enforces the 10 s floor (not 300 s) and falls back on garbage', () => {
-  assert.equal(MIN_SECONDS, 10);
+test('clampSeconds enforces the 5 s floor (not 300 s) and falls back on garbage', () => {
+  assert.equal(MIN_SECONDS, 5);
+  assert.equal(clampSeconds(5), 5);
   assert.equal(clampSeconds(15), 15);
   assert.equal(clampSeconds(3), MIN_SECONDS);
   assert.equal(clampSeconds('300'), 300);

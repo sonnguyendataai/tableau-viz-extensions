@@ -70,13 +70,13 @@
 
   <script>
     /* global tableau */
-    var PRESETS = [10, 15, 30, 60, 120, 300];
+    var PRESETS = [5, 10, 15, 30, 60, 300];
     var FAST_WARN_BELOW = 30;
 
     tableau.extensions.initializeDialogAsync().then(function (payloadStr) {
       var p = {};
       try { p = JSON.parse(payloadStr || '{}'); } catch (e) { p = {}; }
-      var lim = p.limits || { min: 10, max: 86400, default: 60 };
+      var lim = p.limits || { min: 5, max: 86400, default: 60 };
 
       var elSec = document.getElementById('seconds');
       var elApply = document.getElementById('apply');

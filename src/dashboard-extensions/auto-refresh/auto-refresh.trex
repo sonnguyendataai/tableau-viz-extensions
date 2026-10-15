@@ -5,7 +5,7 @@
   <dashboard-extension id="com.sonnguyen.vizplatform.autorefresh" extension-version="0.1.0">
     <default-locale>en_US</default-locale>
     <name resource-id="name"/>
-    <description>Tự refresh data source của dashboard theo chu kỳ cấu hình được (tối thiểu 10s).</description>
+    <description>Tự refresh data source của dashboard theo chu kỳ cấu hình được (tối thiểu 5s).</description>
     <author name="son.nguyen" email="son.nguyen@corp.local" organization="Tableau Viz Platform" website="https://viz.corp.local"/>
     <min-api-version>1.11</min-api-version>
     <!-- URL localhost phải KHỚP CHÍNH XÁC đường dẫn dev server phục vụ.

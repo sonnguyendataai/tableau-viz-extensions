@@ -53,7 +53,7 @@ Chi tiết đầy đủ: [`docs/02-build-recipe.md`](docs/02-build-recipe.md).
 
 `src/dashboard-extensions/auto-refresh/` — **dashboard extension** (không phải viz, không
 dùng `src/core/`), thay cho Auto Refresh (Starschema) trên Exchange vốn khoá tối thiểu
-300s. Chu kỳ cấu hình được **10s – 24h** qua **Configure...**, chọn data source cần
+300s. Chu kỳ cấu hình được **5s – 24h** qua **Configure...**, chọn data source cần
 refresh, click vòng đếm ngược để tạm dừng. Parameter `autoRefresh_seconds` (nếu có) ghi đè
 chu kỳ. Thêm vào dashboard: kéo object **Extension** → Access Local Extensions →
 `auto-refresh.trex`.

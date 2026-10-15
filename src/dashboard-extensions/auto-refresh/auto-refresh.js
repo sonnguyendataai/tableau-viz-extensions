@@ -6,7 +6,7 @@
  *
  * Viết mới, thay cho "Auto Refresh" (Starschema) trên Tableau Exchange — bản đó khoá
  * chu kỳ tối thiểu 300s NGAY TRONG extension (configure.html min="300"). Tableau API
- * không có giới hạn đó; ở đây floor = MIN_SECONDS (10s) để không dội tải lên Server.
+ * không có giới hạn đó; ở đây floor = MIN_SECONDS (5s) để không dội tải lên Server.
  *
  * KHÁC các viz trong src/vizzes/: đây là dashboard extension (dashboardContent), KHÔNG
  * dùng src/core/ (core chỉ phục vụ worksheet extension).
@@ -25,7 +25,7 @@
  * extract trên Server. Refresh quá dày có thể bị admin Tableau Cloud chặn.
  */
 
-export const MIN_SECONDS = 10;
+export const MIN_SECONDS = 5;
 export const MAX_SECONDS = 24 * 60 * 60;
 export const DEFAULT_SECONDS = 60;
 export const PARAM_NAME = 'autoRefresh_seconds';
