@@ -49,6 +49,36 @@ cp -r src/vizzes/barchart src/vizzes/<name>
 
 Chi tiết đầy đủ: [`docs/02-build-recipe.md`](docs/02-build-recipe.md).
 
+## Dashboard extension: Auto Refresh
+
+`src/dashboard-extensions/auto-refresh/` — **dashboard extension** (không phải viz, không
+dùng `src/core/`), thay cho Auto Refresh (Starschema) trên Exchange vốn khoá tối thiểu
+300s. Chu kỳ cấu hình được **10s – 24h** qua **Configure...**, chọn data source cần
+refresh, click vòng đếm ngược để tạm dừng. Parameter `autoRefresh_seconds` (nếu có) ghi đè
+chu kỳ. Thêm vào dashboard: kéo object **Extension** → Access Local Extensions →
+`auto-refresh.trex`.
+
+```bash
+node --test src/dashboard-extensions/auto-refresh/auto-refresh.test.mjs   # 8 test logic
+```
+
+> `refreshAsync()` = bấm Refresh data source; **không** refresh extract trên Server.
+> Chu kỳ ngắn × số người xem = tải lên Server/nguồn dữ liệu — chọn chu kỳ có cân nhắc.
+
+## Dashboard extension: Realtime KPI
+
+`src/dashboard-extensions/realtime-kpi/` — cập nhật định kỳ **chỉ các data source được chọn**, mỗi data
+source một chu kỳ riêng (tối thiểu 15 giây); data source không chọn **giữ nguyên số liệu**. Có khung giờ
+hoạt động, nút **Cập nhật** ngay, tạm dừng, cảnh báo khi chọn nguồn extract. Dùng cho chỉ tiêu
+realtime/near-realtime: đặt các chỉ tiêu đó trên một data source **live** riêng (ví dụ ClickHouse).
+
+```bash
+node --test src/dashboard-extensions/realtime-kpi/realtime-core.test.mjs   # 7 test logic
+```
+
+> Tableau Server không đẩy dữ liệu (push): extension *kéo* lại theo chu kỳ bằng `refreshAsync()`.
+> `refreshAsync()` không làm mới extract. N người xem × 1 truy vấn mỗi chu kỳ.
+
 ## Tài liệu
 
 | Doc | Nội dung |

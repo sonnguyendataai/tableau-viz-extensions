@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Realtime KPI — Dashboard Extension</title>
+  <!-- Extensions API (vendored, MIT) — must load before realtime-kpi.js. -->
+  <script src="../../../lib/tableau.extensions.1.latest.js"></script>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+    body { font-family: 'Benton Sans', 'Helvetica Neue', Arial, sans-serif; color: #173B3E; font-size: 11px;
+           box-sizing: border-box; padding: 4px 6px; display: flex; flex-direction: column; gap: 3px; }
+    .head { display: flex; align-items: center; gap: 6px; }
+    .head .live { width: 8px; height: 8px; border-radius: 50%; background: #127C56; box-shadow: 0 0 0 3px #127C5633; }
+    body.is-paused .head .live { background: #98A6AB; box-shadow: none; }
+    #head-status { font-weight: 700; }
+    .head button { margin-left: auto; font-size: 10px; padding: 1px 7px; border-radius: 10px; border: 1px solid #DCE6E5;
+                   background: #fff; color: #075652; cursor: pointer; }
+    .head button + button { margin-left: 4px; }
+    #groups { overflow: auto; flex: 1; }
+    .row { display: flex; align-items: center; gap: 6px; padding: 2px 0; border-top: 1px solid #F1F5F4; }
+    .row .dot { width: 6px; height: 6px; border-radius: 50%; background: #127C56; flex: none; }
+    .row.busy .dot { background: #FFB71B; }
+    .row.err .dot { background: #C62828; }
+    .row .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .meta { color: #5E6E77; white-space: nowrap; }
+    .row.err .meta { color: #C62828; }
+    .empty { color: #98A6AB; padding: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <span class="live" aria-hidden="true"></span>
+    <span id="head-status">…</span>
+    <button id="now" type="button" title="Cập nhật tất cả chỉ tiêu realtime ngay">Cập nhật</button>
+    <button id="pause" type="button" title="Tạm dừng / tiếp tục">⏸</button>
+  </div>
+  <div id="groups"></div>
+  <script type="module" src="./realtime-kpi.js"></script>
+</body>
+</html>

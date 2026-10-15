@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>Realtime KPI — Cấu hình</title>
+  <script src="../../../lib/tableau.extensions.1.latest.js"></script>
+  <style>
+    :root { font-family: 'Benton Sans', 'Helvetica Neue', Arial, sans-serif; color: #173B3E; }
+    body { margin: 0; padding: 14px 16px; font-size: 13px; }
+    h2 { font-size: 15px; margin: 0 0 4px; }
+    p.hint { font-size: 12px; color: #5E6E77; margin: 0 0 10px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 11px; color: #5E6E77; font-weight: 600; padding: 4px; border-bottom: 1px solid #DCE6E5; }
+    td { padding: 5px 4px; border-bottom: 1px solid #F1F5F4; vertical-align: top; }
+    td.ws { font-size: 11px; color: #98A6AB; }
+    input[type="number"] { width: 70px; }
+    input[type="text"] { width: 150px; }
+    input.invalid { border-color: #C62828; }
+    .tag { font-size: 10px; padding: 0 5px; border-radius: 8px; background: #F1F5F4; color: #5E6E77; }
+    .tag.warn { background: #FFF4DC; color: #8A5D00; }
+    .warn { font-size: 12px; color: #8A5D00; margin: 8px 0 0; }
+    .hours { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .actions button { font-size: 13px; padding: 6px 16px; border-radius: 4px; border: 1px solid #DCE6E5; background: #fff; cursor: pointer; }
+    .actions .primary { background: #075652; border-color: #075652; color: #fff; }
+    .actions button:disabled { opacity: .5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h2>Chỉ tiêu realtime</h2>
+  <p class="hint">Chọn nguồn dữ liệu cần cập nhật định kỳ. Các nguồn không chọn giữ nguyên số liệu.
+     Mỗi nguồn có chu kỳ riêng (tối thiểu 15 giây).</p>
+  <table>
+    <thead><tr><th>Realtime</th><th>Nguồn dữ liệu</th><th>Tên hiển thị</th><th>Chu kỳ (giây)</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="warn" id="extractWarn" hidden>Nguồn <b>extract</b> không được cập nhật bằng extension: Tableau Server chỉ làm mới
+     extract theo lịch (tối thiểu 15 phút) hoặc qua REST API. Dùng kết nối <b>live</b> cho chỉ tiêu realtime.</p>
+  <p class="warn" id="fastWarn" hidden>Chu kỳ dưới 60 giây: mỗi người đang mở dashboard gửi 1 truy vấn mỗi chu kỳ tới nguồn dữ liệu.</p>
+  <div class="hours">
+    <label>Chỉ cập nhật trong giờ</label>
+    <input type="time" id="from" /> – <input type="time" id="to" />
+    <span class="hint">(để trống = luôn cập nhật)</span>
+  </div>
+  <div class="actions">
+    <button id="cancel" type="button">Hủy</button>
+    <button id="apply" type="button" class="primary">Áp dụng</button>
+  </div>
+  <script>
+    /* global tableau */
+    var MIN = 15, MAX = 86400, DEF = 60, WARN = 60;
+    tableau.extensions.initializeDialogAsync().then(function (raw) {
+      var p = {};
+      try { p = JSON.parse(raw || '{}'); } catch (e) { p = {}; }
+      var saved = {};
+      (p.groups || []).forEach(function (g) { saved[g.dsId] = g; });
+      var tbody = document.getElementById('rows');
+      var apply = document.getElementById('apply');
+      (p.dataSources || []).forEach(function (ds) {
+        var g = saved[ds.id];
+        var tr = document.createElement('tr');
+        tr.dataset.id = ds.id;
+        tr.dataset.extract = ds.isExtract ? '1' : '';
+        var c0 = document.createElement('td'); var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!g; c0.appendChild(cb);
+        var c1 = document.createElement('td');
+        var nm = document.createElement('div'); nm.textContent = ds.name + ' ';
+        var tag = document.createElement('span'); tag.className = 'tag' + (ds.isExtract ? ' warn' : ''); tag.textContent = ds.isExtract ? 'extract' : 'live';
+        nm.appendChild(tag);
+        var ws = document.createElement('div'); ws.className = 'ws'; ws.textContent = (ds.worksheets || []).join(', ');
+        c1.append(nm, ws);
+        var c2 = document.createElement('td'); var lb = document.createElement('input'); lb.type = 'text'; lb.maxLength = 60;
+        lb.placeholder = ds.name; lb.value = g && g.label ? g.label : ''; c2.appendChild(lb);
+        var c3 = document.createElement('td'); var sec = document.createElement('input'); sec.type = 'number'; sec.min = MIN; sec.max = MAX; sec.step = 1;
+        sec.value = g ? g.seconds : DEF; c3.appendChild(sec);
+        tr.append(c0, c1, c2, c3);
+        tbody.appendChild(tr);
+        cb.addEventListener('change', validate); sec.addEventListener('input', validate);
+      });
+      if (!(p.dataSources || []).length) tbody.innerHTML = '<tr><td colspan="4" class="ws">Dashboard chưa có worksheet nào.</td></tr>';
+      document.getElementById('from').value = p.activeFrom || '';
+      document.getElementById('to').value = p.activeTo || '';
+
+      function rows() { return Array.prototype.slice.call(tbody.querySelectorAll('tr[data-id]')); }
+      function validate() {
+        var ok = true, extract = false, fast = false;
+        rows().forEach(function (tr) {
+          var cb = tr.querySelector('input[type=checkbox]'); var sec = tr.querySelector('input[type=number]');
+          var n = Number(sec.value); var good = Number.isInteger(n) && n >= MIN && n <= MAX;
+          sec.classList.toggle('invalid', cb.checked && !good);
+          if (cb.checked && !good) ok = false;
+          if (cb.checked && tr.dataset.extract) extract = true;
+          if (cb.checked && good && n < WARN) fast = true;
+        });
+        apply.disabled = !ok;
+        document.getElementById('extractWarn').hidden = !extract;
+        document.getElementById('fastWarn').hidden = !fast;
+      }
+      validate();
+
+      document.getElementById('cancel').onclick = function () { tableau.extensions.ui.closeDialog(''); };
+      apply.onclick = function () {
+        var groups = rows().filter(function (tr) { return tr.querySelector('input[type=checkbox]').checked; }).map(function (tr) {
+          return { dsId: tr.dataset.id, seconds: Number(tr.querySelector('input[type=number]').value),
+                   label: tr.querySelector('input[type=text]').value.trim() };
+        });
+        tableau.extensions.ui.closeDialog(JSON.stringify({
+          groups: groups, activeFrom: document.getElementById('from').value, activeTo: document.getElementById('to').value,
+        }));
+      };
+    });
+  </script>
+</body>
+</html>

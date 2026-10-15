@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Auto Refresh — Configure</title>
+
+  <!-- Extensions API (vendored, MIT) — cần cho initializeDialogAsync + closeDialog. -->
+  <script src="../../../lib/tableau.extensions.1.latest.js"></script>
+
+  <style>
+    :root { font-family: 'Benton Sans', 'Helvetica Neue', Arial, sans-serif; }
+    html, body { margin: 0; padding: 0; color: #333; }
+    body { padding: 16px 18px; box-sizing: border-box; }
+    h2 { font-size: 15px; margin: 0 0 4px; }
+    h3 { font-size: 13px; margin: 16px 0 4px; }
+    p.hint { font-size: 12px; color: #666; margin: 0 0 10px; }
+    p.warn { font-size: 12px; color: #b85e08; margin: 6px 0 0; }
+    .row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+    .row input[type="number"] {
+      width: 90px; font-size: 13px; padding: 5px 7px;
+      border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;
+    }
+    .row input.invalid { border-color: #e15759; }
+    .presets button {
+      font-size: 12px; padding: 3px 9px; border-radius: 12px; cursor: pointer;
+      border: 1px solid #ccc; background: #fff;
+    }
+    .presets button.on { border-color: #4e79a7; color: #4e79a7; font-weight: 600; }
+    #dsList { max-height: 170px; overflow: auto; border: 1px solid #eee; border-radius: 4px; }
+    #dsList label {
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+      font-size: 13px; border-bottom: 1px solid #f2f2f2; cursor: pointer;
+    }
+    #dsList .tag { margin-left: auto; font-size: 11px; color: #888; }
+    .empty { font-size: 12px; color: #888; padding: 8px; }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .actions button {
+      font-size: 13px; padding: 6px 16px; border-radius: 4px; cursor: pointer;
+      border: 1px solid #ccc; background: #fff;
+    }
+    .actions button.primary { background: #4e79a7; border-color: #4e79a7; color: #fff; }
+    .actions button:disabled { opacity: .5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <h2>Auto Refresh</h2>
+  <p class="hint">Chu kỳ tự refresh data source của dashboard. Lưu vào workbook.</p>
+
+  <div class="row">
+    <input type="number" id="seconds" step="1" />
+    <span>giây</span>
+    <span class="hint" id="limitHint" style="font-size:12px;color:#666"></span>
+  </div>
+  <div class="row presets" id="presets"></div>
+  <p class="warn" id="paramWarn" hidden>
+    Workbook có parameter <b>autoRefresh_seconds</b> — giá trị parameter đang GHI ĐÈ chu kỳ này.
+  </p>
+  <p class="warn" id="fastWarn" hidden>
+    Chu kỳ ngắn làm tăng tải lên Tableau Server/nguồn dữ liệu (mỗi người xem = 1 lượt truy vấn).
+  </p>
+
+  <h3>Data source cần refresh</h3>
+  <p class="hint">Không chọn gì = refresh tất cả.</p>
+  <div id="dsList"></div>
+
+  <div class="actions">
+    <button id="cancel">Hủy</button>
+    <button id="apply" class="primary">Áp dụng</button>
+  </div>
+
+  <script>
+    /* global tableau */
+    var PRESETS = [10, 15, 30, 60, 120, 300];
+    var FAST_WARN_BELOW = 30;
+
+    tableau.extensions.initializeDialogAsync().then(function (payloadStr) {
+      var p = {};
+      try { p = JSON.parse(payloadStr || '{}'); } catch (e) { p = {}; }
+      var lim = p.limits || { min: 10, max: 86400, default: 60 };
+
+      var elSec = document.getElementById('seconds');
+      var elApply = document.getElementById('apply');
+      var elFast = document.getElementById('fastWarn');
+      elSec.min = lim.min;
+      elSec.max = lim.max;
+      elSec.value = p.seconds || lim.default;
+      document.getElementById('limitHint').textContent = '(' + lim.min + '–' + lim.max + ')';
+      document.getElementById('paramWarn').hidden = !p.paramActive;
+
+      // Preset nhanh.
+      var presetsEl = document.getElementById('presets');
+      PRESETS.filter(function (s) { return s >= lim.min && s <= lim.max; }).forEach(function (s) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = s < 60 ? s + 's' : (s / 60) + ' phút';
+        b.dataset.sec = String(s);
+        b.onclick = function () { elSec.value = s; validate(); };
+        presetsEl.appendChild(b);
+      });
+
+      function validate() {
+        var n = Number(elSec.value);
+        var ok = Number.isInteger(n) && n >= lim.min && n <= lim.max;
+        elSec.classList.toggle('invalid', !ok);
+        elApply.disabled = !ok;
+        elFast.hidden = !(ok && n < FAST_WARN_BELOW);
+        Array.prototype.forEach.call(presetsEl.children, function (b) {
+          b.classList.toggle('on', Number(b.dataset.sec) === n);
+        });
+        return ok;
+      }
+      elSec.addEventListener('input', validate);
+      validate();
+
+      // Danh sách data source.
+      var selected = new Set(p.selectedIds || []);
+      var listEl = document.getElementById('dsList');
+      var sources = p.dataSources || [];
+      if (sources.length === 0) {
+        listEl.innerHTML = '<div class="empty">Dashboard chưa có worksheet/data source nào.</div>';
+      }
+      sources.forEach(function (ds) {
+        var label = document.createElement('label');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = ds.id;
+        cb.checked = selected.has(ds.id);
+        var name = document.createElement('span');
+        name.textContent = ds.name;
+        var tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = ds.isExtract ? 'extract' : 'live';
+        label.appendChild(cb);
+        label.appendChild(name);
+        label.appendChild(tag);
+        listEl.appendChild(label);
+      });
+
+      elApply.onclick = function () {
+        if (!validate()) return;
+        var ids = Array.prototype.map.call(
+          listEl.querySelectorAll('input[type="checkbox"]:checked'), function (cb) { return cb.value; });
+        tableau.extensions.ui.closeDialog(JSON.stringify({ seconds: Number(elSec.value), selectedIds: ids }));
+      };
+      document.getElementById('cancel').onclick = function () {
+        tableau.extensions.ui.closeDialog(''); // trả rỗng → extension giữ cấu hình cũ
+      };
+    });
+  </script>
+</body>
+</html>
