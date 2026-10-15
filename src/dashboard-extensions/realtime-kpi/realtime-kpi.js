@@ -101,14 +101,18 @@ function render(groupStates) {
 /* ------------------------------------------------------------- config --- */
 
 async function openConfig() {
-  const { dataSources, worksheetsByDs } = await scanDashboard();
-  const payload = JSON.stringify({
-    groups: readSavedGroups(),
-    activeFrom: readSetting(SETTINGS.activeFrom),
-    activeTo: readSetting(SETTINGS.activeTo),
-    dataSources: dataSources.map((d) => ({ ...d, worksheets: worksheetsByDs.get(d.id) ?? [] })),
-  });
   try {
+    const { dataSources, worksheetsByDs } = await scanDashboard();
+    // Chỉ gửi trường thuần: DataSource thật của Tableau có vòng tham chiếu (Field → _parentDataSource)
+    // → JSON.stringify ném lỗi và dialog không bao giờ mở.
+    const payload = JSON.stringify({
+      groups: readSavedGroups(),
+      activeFrom: readSetting(SETTINGS.activeFrom),
+      activeTo: readSetting(SETTINGS.activeTo),
+      dataSources: dataSources.map((d) => ({
+        id: d.id, name: d.name, isExtract: !!d.isExtract, worksheets: worksheetsByDs.get(d.id) ?? [],
+      })),
+    });
     const closed = await tableau.extensions.ui.displayDialogAsync('./realtime-kpi-config.html', payload, { width: 560, height: 560 });
     if (!closed) return;
     const cfg = JSON.parse(closed);
@@ -124,6 +128,8 @@ async function openConfig() {
     if (err && err.errorCode === tableau.ErrorCodes.DialogClosedByUser) return;
     // eslint-disable-next-line no-console
     console.error('[realtime-kpi] config', err);
+    const head = document.getElementById('head-status');
+    if (head) head.textContent = `Lỗi mở cấu hình: ${(err && err.message) || err}`;
   }
 }
 
